@@ -1,4 +1,4 @@
-### 🚀 Smart Motor Test Bench
+# 🚀 Smart Motor Test Bench
 
 > **A Real-Time DC Motor Performance Monitoring System built using Arduino UNO, Python and PyQt5.**
 
