@@ -6,7 +6,7 @@
 
 # 🖥 Dashboard Preview
 
-
+>A clean industrial dashboard providing live visualization of every critical motor parameter in real time.
 
 ![Dashboard](Images/dashboard.png)
 
