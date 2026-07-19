@@ -1,4 +1,4 @@
-# 🚀 Smart Motor Test Bench
+### 🚀 Smart Motor Test Bench
 
 > **A Real-Time DC Motor Performance Monitoring System built using Arduino UNO, Python and PyQt5.**
 
@@ -6,7 +6,7 @@
 
 # 🖥 Dashboard Preview
 
-> *(Insert your best dashboard screenshot here)*
+
 
 ![Dashboard](Images/dashboard.png)
 
@@ -22,13 +22,12 @@ It also provides professional reporting and export capabilities.
 
 ---
 
-# ✨ Features
+## ✨ Features
 
 ---
 
-## 🚀 Startup Screen
+# 🚀 Startup Screen
 
-> *(Insert Startup Screen Screenshot)*
 
 ![Startup](Images/startup.png)
 
@@ -44,7 +43,6 @@ It also provides professional reporting and export capabilities.
 
 ## 🖥 Main Dashboard
 
-> *(Insert Dashboard Screenshot)*
 
 ![Dashboard](Images/dashboard.png)
 
@@ -68,7 +66,7 @@ Each parameter displays:
 
 ## 📈 Live Graphs
 
-> *(Insert Graph Screenshot)*
+
 
 ![Graphs](Images/graphs.png)
 
@@ -85,7 +83,7 @@ Each parameter displays:
 
 ## 📊 Statistics Panel
 
-> *(Insert Statistics Screenshot)*
+
 
 ![Statistics](Images/dashboard1.png)
 
@@ -101,8 +99,6 @@ Displays:
 
 ## 📤 Export System
 
-> *(Insert Export Screenshot)*
-
 ![Export](Images/export.png)
 
 Supports:
@@ -116,7 +112,7 @@ Supports:
 
 ## ⚙ Top Control Bar
 
-> *(Insert Top Bar Screenshot)*
+
 
 ![TopBar](Images/topbar.png)
 
