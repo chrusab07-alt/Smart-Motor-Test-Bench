@@ -1,0 +1,8 @@
+The following libraries are used in the project
+PyQt5
+pyserial
+matplotlib
+numpy
+pandas
+reportlab
+fpdf2
