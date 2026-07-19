@@ -1,0 +1,8 @@
+{
+    "theme": "Industrial Dark",
+    "dark_mode": true,
+    "refresh_rate_ms": 100,
+    "baud_rate": 115200,
+    "default_com_port": "COM4",
+    "auto_connect": true
+}
