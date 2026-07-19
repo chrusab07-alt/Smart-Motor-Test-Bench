@@ -87,9 +87,9 @@ A real-time DC Motor Performance Monitoring System built using **Arduino UNO**, 
 
 ## 👨‍💻 Developed By
 
-**Engineer SB**  
+**Muhammad Rusab Chaudhary**  
 *Electrical Engineering Student*  
-*UET Lahore*
+*University Of Engineering and Technology Lahore,Pakistan*
 
 ---
 
