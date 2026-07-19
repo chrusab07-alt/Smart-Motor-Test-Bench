@@ -25,6 +25,7 @@ import pathlib
 import datetime
 import csv
 
+
 # ── Ensure project root is on sys.path ──────────────────────────────────────
 ROOT = pathlib.Path(__file__).parent.resolve()
 sys.path.insert(0, str(ROOT))
@@ -1160,130 +1161,312 @@ class MainWindow(QMainWindow):
                 page_str = f"Page {page_num} of {total_pages}"
                 painter.drawText(page_width - margin - 100, page_height - 40, page_str)
                 
-            # ---------------- PAGE 1 ----------------
-            title_font = QFont("Segoe UI", 22, QFont.Weight.Bold)
-            painter.setFont(title_font)
-            painter.setPen(QColor("#0F172A"))
-            painter.drawText(margin, 100, "SMART MOTOR TEST BENCH")
-            
-            subtitle_font = QFont("Segoe UI", 12, QFont.Weight.Bold)
-            painter.setFont(subtitle_font)
-            painter.setPen(QColor("#3B82F6"))
-            painter.drawText(margin, 130, "Motor Performance Monitoring Report")
-            
-            painter.setPen(QPen(QColor("#3B82F6"), 2))
-            painter.drawLine(margin, 150, page_width - margin, 150)
-            
-            painter.setPen(QColor("#334155"))
-            painter.setFont(QFont("Segoe UI", 9))
-            
-            now = datetime.datetime.now()
-            date_str = now.strftime("%Y-%m-%d")
-            time_str = now.strftime("%I:%M:%S %p")
-            
-            fw_version = self._fw_card.fw_val.text() if hasattr(self, "_fw_card") else "v1.0.0"
-            com_port = self._com_card.value_lbl.text() if hasattr(self, "_com_card") else "N/A"
+            # ── Variables needed across pages ───────────────────────────────
+            now           = datetime.datetime.now()
+            fw_version    = self._fw_card.fw_val.text()     if hasattr(self, "_fw_card")   else "v1.0.0"
+            com_port      = self._com_card.value_lbl.text() if hasattr(self, "_com_card")  else "N/A"
             system_status = self._conn_card.text_lbl.text() if hasattr(self, "_conn_card") else "Unknown"
-            
-            meta_y = 190
-            painter.drawText(margin, meta_y, f"Date:  {date_str}")
-            painter.drawText(margin + 300, meta_y, f"Time:  {time_str}")
-            meta_y += 25
-            painter.drawText(margin, meta_y, f"Firmware Version:  {fw_version}")
-            painter.drawText(margin + 300, meta_y, f"COM Port:  {com_port}")
-            meta_y += 25
-            painter.drawText(margin, meta_y, f"System Status:  {system_status}")
-            
-            painter.setPen(QPen(QColor("#E2E8F0"), 1))
-            painter.drawLine(margin, meta_y + 20, page_width - margin, meta_y + 20)
-            
-            readings_y = meta_y + 60
-            painter.setPen(QColor("#0F172A"))
-            painter.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
-            painter.drawText(margin, readings_y, "Current Sensor Readings")
-            
-            metrics = self._serial.get_latest_metrics() if self._serial else {
-                "rpm": 0.0, "voltage": 0.0, "current": 0.0, "power": 0.0, "efficiency": 0.0, "temperature": 0.0
+
+            # ── Shared graph/table dimensions ───────────────────────────────
+            graph_width  = page_width - 2 * margin
+            # Each parameter page: table ~430px + gap 20px + graph label 28px + graph
+            # Leave ~100px for header/footer. Graph fills the rest.
+            graph_height = int(graph_width * 0.42)   # ~470px — fits nicely below table
+
+            # ── Pages 2–7: one page per parameter (table then graph) ─────────
+            # param_pages = (key, page_num, section_icon, section_title, graph_title, line_color, unit, decimals)
+            param_pages = [
+                ("RPM",         2, "①", "Speed (RPM) – Performance Analysis",
+                 "Speed (RPM) vs Time",     "#10B981", "rpm", 1),
+                ("Voltage",     3, "②", "Voltage – Performance Analysis",
+                 "Voltage vs Time",         "#3B82F6", "V",   2),
+                ("Current",     4, "③", "Current – Performance Analysis",
+                 "Current vs Time",         "#F59E0B", "A",   2),
+                ("Power",       5, "④", "Power – Performance Analysis",
+                 "Power vs Time",           "#8B5CF6", "W",   2),
+                ("Temperature", 6, "⑤", "Temperature – Performance Analysis",
+                 "Temperature vs Time",     "#F97316", "°C",  1),
+                ("Efficiency",  7, "⑥", "Efficiency – Performance Analysis",
+                 "Efficiency vs Time",      "#06B6D4", "%",   1),
+            ]
+
+            # ══════════════════════════════════════════════════════════════════
+            #  Stats, design constants, and helpers for pages 2-8
+            # ══════════════════════════════════════════════════════════════════
+
+            import statistics as _stats_mod
+
+            def _compute_stats(values, times_):
+                if not values:
+                    return dict(max=0.0, min=0.0, avg=0.0, range=0.0,
+                                std=0.0, initial=0.0, final=0.0,
+                                samples=0, duration=0.0)
+                n   = len(values)
+                avg = sum(values) / n
+                std = _stats_mod.stdev(values) if n > 1 else 0.0
+                dur = times_[-1] - times_[0] if len(times_) > 1 else 0.0
+                return dict(max=max(values), min=min(values), avg=avg,
+                            range=max(values) - min(values), std=std,
+                            initial=values[0], final=values[-1],
+                            samples=n, duration=dur)
+
+            def _fmt_dur(seconds):
+                h = int(seconds) // 3600
+                m = (int(seconds) % 3600) // 60
+                s = int(seconds) % 60
+                if h > 0: return f"{h}h {m:02d}m {s:02d}s"
+                if m > 0: return f"{m}m {s:02d}s"
+                return f"{s}s"
+
+            _hv       = history_values
+            st_rpm    = _compute_stats(_hv.get("RPM",         []), times)
+            st_volt   = _compute_stats(_hv.get("Voltage",     []), times)
+            st_curr   = _compute_stats(_hv.get("Current",     []), times)
+            st_pwr    = _compute_stats(_hv.get("Power",       []), times)
+            st_temp   = _compute_stats(_hv.get("Temperature", []), times)
+            st_eff    = _compute_stats(_hv.get("Efficiency",  []), times)
+
+            total_dur   = times[-1] - times[0] if len(times) > 1 else 0.0
+            total_samps = len(times)
+            samp_rate   = total_samps / total_dur if total_dur > 0 else 0.0
+
+            # Map key → stats dict for easy lookup in loop
+            _stats_map = {
+                "RPM": st_rpm, "Voltage": st_volt, "Current": st_curr,
+                "Power": st_pwr, "Temperature": st_temp, "Efficiency": st_eff,
             }
-            
-            val_rpm = f"{metrics.get('rpm', 0.0):.1f} RPM"
-            val_volt = f"{metrics.get('voltage', 0.0):.2f} V"
-            val_curr = f"{metrics.get('current', 0.0):.2f} A"
-            val_pwr = f"{metrics.get('power', 0.0):.2f} W"
-            val_temp = f"{metrics.get('temperature', 0.0):.1f} °C"
-            val_eff = f"{metrics.get('efficiency', 0.0):.1f} %"
-            
-            grid_y = readings_y + 30
-            row_height = 40
-            col_width = (page_width - 2 * margin) // 2
-            
-            def draw_reading_item(x, y, label, val):
-                painter.setPen(Qt.NoPen)
-                painter.setBrush(QColor("#F8FAFC"))
-                painter.drawRoundedRect(x, y, col_width - 20, row_height - 5, 4, 4)
-                
-                painter.setPen(QPen(QColor("#E2E8F0"), 0.5))
-                painter.setBrush(Qt.NoBrush)
-                painter.drawRoundedRect(x, y, col_width - 20, row_height - 5, 4, 4)
-                
-                painter.setPen(QColor("#475569"))
-                painter.setFont(QFont("Segoe UI", 9))
-                painter.drawText(x + 15, y + 22, label)
-                
-                painter.setPen(QColor("#0F172A"))
-                painter.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
-                painter.drawText(x + 220, y + 22, val)
-                
-            draw_reading_item(margin, grid_y, "RPM", val_rpm)
-            draw_reading_item(margin + col_width, grid_y, "Power", val_pwr)
-            grid_y += row_height
-            
-            draw_reading_item(margin, grid_y, "Voltage", val_volt)
-            draw_reading_item(margin + col_width, grid_y, "Temperature", val_temp)
-            grid_y += row_height
-            
-            draw_reading_item(margin, grid_y, "Current", val_curr)
-            draw_reading_item(margin + col_width, grid_y, "Efficiency", val_eff)
-            
-            draw_page_decorations(painter, 1, 4)
-            
-            # Setup graph dimensions for A4 PDF layout
-            graph_width = page_width - 2 * margin
-            graph_height = int(graph_width * 0.48)
-            graph_x = margin
-            
-            def draw_graphs_page(painter, page_num, g1_title, g1_key, g2_title, g2_key):
+
+            # Design palette
+            C_HDR_BG = QColor("#1E293B")
+            C_HDR_FG = QColor("#FFFFFF")
+            C_ROW_A  = QColor("#F1F5F9")
+            C_ROW_B  = QColor("#FFFFFF")
+            C_ACCENT = QColor("#3B82F6")
+            C_SEP_   = QColor("#CBD5E1")
+            C_LBL_   = QColor("#334155")
+            C_VAL_   = QColor("#0F172A")
+            C_SEC_FG = QColor("#1E293B")
+
+            tbl_w     = page_width - 2 * margin
+            col_lbl_w = int(tbl_w * 0.60)
+            row_h_    = 38
+            hdr_h_    = 42
+
+            def _new_page(page_num):
                 writer.newPage()
-                
-                # Graph 1
-                painter.setPen(QColor("#0F172A"))
+                draw_page_decorations(painter, page_num, 7)
+
+            def _section_header(icon, title, y):
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(C_ACCENT)
+                painter.drawRect(margin, y, 5, 30)
+                painter.setPen(C_SEC_FG)
                 painter.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
-                painter.drawText(margin, 100, g1_title)
-                
-                pix1 = QPixmap(temp_png_paths[g1_key])
-                scaled_pix1 = pix1.scaled(graph_width, graph_height, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                painter.drawPixmap(graph_x, 120, scaled_pix1)
-                
-                # Graph 2
+                painter.drawText(margin + 16, y + 22, f"{icon}  {title}")
+                return y + 44
+
+            def _draw_table(rows, y):
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(C_HDR_BG)
+                painter.drawRect(margin, y, tbl_w, hdr_h_)
+                painter.setPen(C_HDR_FG)
+                painter.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+                painter.drawText(margin + 14,             y + 28, "PARAMETER")
+                painter.drawText(margin + col_lbl_w + 14, y + 28, "VALUE")
+                y += hdr_h_
+                for i, (label, value) in enumerate(rows):
+                    bg = C_ROW_A if i % 2 == 0 else C_ROW_B
+                    painter.setPen(Qt.NoPen)
+                    painter.setBrush(bg)
+                    painter.drawRect(margin, y, tbl_w, row_h_)
+                    painter.setPen(QPen(C_SEP_, 0.5))
+                    painter.setBrush(Qt.NoBrush)
+                    painter.drawLine(margin, y + row_h_, margin + tbl_w, y + row_h_)
+                    painter.drawLine(margin + col_lbl_w, y, margin + col_lbl_w, y + row_h_)
+                    painter.setPen(C_LBL_)
+                    painter.setFont(QFont("Segoe UI", 9))
+                    painter.drawText(margin + 14, y + 25, label)
+                    painter.setPen(C_VAL_)
+                    painter.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+                    painter.drawText(margin + col_lbl_w + 14, y + 25, value)
+                    y += row_h_
+                painter.setPen(QPen(C_ACCENT, 1.5))
+                painter.drawLine(margin, y, margin + tbl_w, y)
+                painter.setPen(QPen(C_SEP_, 1))
+                painter.setBrush(Qt.NoBrush)
+                return y + 22
+
+            def _page_heading(title, y, meta=False):
+                painter.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
+                painter.setPen(C_SEC_FG)
+                painter.drawText(margin, y, title)
+                if meta:
+                    painter.setFont(QFont("Segoe UI", 9))
+                    painter.setPen(QColor("#64748B"))
+                    painter.drawText(margin, y + 22,
+                        f"Generated: {now.strftime('%Y-%m-%d  %I:%M:%S %p')}"
+                        f"   |   Total Samples: {total_samps:,}")
+                    line_y = y + 34
+                else:
+                    line_y = y + 24
+                painter.setPen(QPen(C_SEP_, 1))
+                painter.drawLine(margin, line_y, page_width - margin, line_y)
+                return line_y + 22
+
+            # Health helpers
+            def _h_rpm(v):
+                if v >= 2950: return ("WARNING", QColor("#EF4444"), QColor("#FEE2E2"))
+                if v >= 2800: return ("CAUTION", QColor("#F59E0B"), QColor("#FEF3C7"))
+                return               ("NORMAL",  QColor("#10B981"), QColor("#D1FAE5"))
+            def _h_volt(v):
+                if v < 10.0 or v > 24.0: return ("WARNING", QColor("#EF4444"), QColor("#FEE2E2"))
+                if v < 11.0 or v > 23.0: return ("CAUTION", QColor("#F59E0B"), QColor("#FEF3C7"))
+                return                   ("NORMAL",  QColor("#10B981"), QColor("#D1FAE5"))
+            def _h_curr(v):
+                if v > 2.5: return ("WARNING", QColor("#EF4444"), QColor("#FEE2E2"))
+                if v > 2.0: return ("CAUTION", QColor("#F59E0B"), QColor("#FEF3C7"))
+                return             ("NORMAL",  QColor("#10B981"), QColor("#D1FAE5"))
+            def _h_pwr(v):
+                if v > 10.0: return ("WARNING", QColor("#EF4444"), QColor("#FEE2E2"))
+                if v > 9.0:  return ("CAUTION", QColor("#F59E0B"), QColor("#FEF3C7"))
+                return              ("NORMAL",  QColor("#10B981"), QColor("#D1FAE5"))
+            def _h_temp(v):
+                if v >= 80.0: return ("WARNING", QColor("#EF4444"), QColor("#FEE2E2"))
+                if v >= 60.0: return ("CAUTION", QColor("#F59E0B"), QColor("#FEF3C7"))
+                return               ("NORMAL",  QColor("#10B981"), QColor("#D1FAE5"))
+            def _h_eff(v):
+                if v < 50.0: return ("WARNING", QColor("#EF4444"), QColor("#FEE2E2"))
+                if v < 70.0: return ("CAUTION", QColor("#F59E0B"), QColor("#FEF3C7"))
+                return              ("NORMAL",  QColor("#10B981"), QColor("#D1FAE5"))
+
+            # Unit-aware row builder
+            def _build_rows(key, unit, dec):
+                st = _stats_map[key]
+                name = {
+                    "RPM": "Speed", "Voltage": "Voltage", "Current": "Current",
+                    "Power": "Power", "Temperature": "Temperature", "Efficiency": "Efficiency",
+                }[key]
+                fmt = f".{dec}f"
+                u = f" {unit}" if unit else ""
+                return [
+                    (f"Maximum {name}",    f"{st['max']:{fmt}}{u}"),
+                    (f"Minimum {name}",    f"{st['min']:{fmt}}{u}"),
+                    (f"Average {name}",    f"{st['avg']:{fmt}}{u}"),
+                    (f"{name} Range",      f"{st['range']:{fmt}}{u}"),
+                    ("Standard Deviation", f"{st['std']:.{max(dec,2)}f}{u}"),
+                    (f"Initial {name}",    f"{st['initial']:{fmt}}{u}"),
+                    (f"Final {name}",      f"{st['final']:{fmt}}{u}"),
+                    ("Total Samples",      f"{st['samples']:,}"),
+                    ("Test Duration",      _fmt_dur(st['duration'])),
+                ]
+
+            # -- PAGE 1: Summary + Health (drawn on the auto-created first page) --
+
+            draw_page_decorations(painter, 1, 7)
+            y = 90
+            y = _page_heading("Test Summary & Health Assessment", y)
+
+            y = _section_header("①", "Overall Test Information", y)
+            y = _draw_table([
+                ("Export Date",               now.strftime("%Y-%m-%d")),
+                ("Export Time",               now.strftime("%I:%M:%S %p")),
+                ("Total Test Duration",        _fmt_dur(total_dur)),
+                ("Total Samples Recorded",     f"{total_samps:,}"),
+                ("Average Sampling Rate",      f"{samp_rate:.2f} Hz"),
+                ("Firmware Version",           fw_version),
+                ("COM Port",                   com_port),
+                ("System Status",              system_status),
+                ("Software Version",           "v1.1.2"),
+                ("Report Version",             "2.0"),
+                ("Test Status",                "COMPLETED" if total_samps > 0 else "NO DATA"),
+            ], y)
+            y += 28
+
+            y = _section_header("②", "Performance Health Indicators", y)
+
+            health_entries = [
+                ("Speed (RPM)",
+                 f"Avg {st_rpm['avg']:.1f} RPM   |   Max {st_rpm['max']:.1f} RPM",
+                 _h_rpm(st_rpm['max'])),
+                ("Voltage",
+                 f"Avg {st_volt['avg']:.2f} V   |   Range {st_volt['range']:.2f} V",
+                 _h_volt(st_volt['avg'])),
+                ("Current",
+                 f"Avg {st_curr['avg']:.2f} A   |   Max {st_curr['max']:.2f} A",
+                 _h_curr(st_curr['max'])),
+                ("Power",
+                 f"Avg {st_pwr['avg']:.2f} W   |   Max {st_pwr['max']:.2f} W",
+                 _h_pwr(st_pwr['max'])),
+                ("Temperature",
+                 f"Avg {st_temp['avg']:.1f} °C   |   Max {st_temp['max']:.1f} °C",
+                 _h_temp(st_temp['max'])),
+                ("Efficiency",
+                 f"Avg {st_eff['avg']:.1f} %   |   Min {st_eff['min']:.1f} %",
+                 _h_eff(st_eff['min'])),
+            ]
+
+            hi_row_h = 52
+            badge_w  = 110
+
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(C_HDR_BG)
+            painter.drawRect(margin, y, tbl_w, hdr_h_)
+            painter.setPen(C_HDR_FG)
+            painter.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+            painter.drawText(margin + 14,                    y + 28, "PARAMETER")
+            painter.drawText(margin + 240,                   y + 28, "MEASURED VALUES")
+            painter.drawText(margin + tbl_w - badge_w - 14, y + 28, "STATUS")
+            y += hdr_h_
+
+            for idx, (param, detail, (status_str, fg_c, bg_c)) in enumerate(health_entries):
+                row_bg = C_ROW_A if idx % 2 == 0 else C_ROW_B
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(row_bg)
+                painter.drawRect(margin, y, tbl_w, hi_row_h)
+                painter.setPen(QPen(C_SEP_, 0.5))
+                painter.setBrush(Qt.NoBrush)
+                painter.drawLine(margin, y + hi_row_h, margin + tbl_w, y + hi_row_h)
+                painter.setPen(C_LBL_)
+                painter.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+                painter.drawText(margin + 14, y + 20, param)
+                painter.setPen(QColor("#475569"))
+                painter.setFont(QFont("Segoe UI", 8))
+                painter.drawText(margin + 14, y + 38, detail)
+                bx = margin + tbl_w - badge_w - 18
+                by = y + (hi_row_h - 28) // 2
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(bg_c)
+                painter.drawRoundedRect(bx, by, badge_w, 28, 6, 6)
+                painter.setPen(fg_c)
+                painter.setFont(QFont("Segoe UI", 8, QFont.Weight.Bold))
+                fm = painter.fontMetrics()
+                tx = bx + (badge_w - fm.horizontalAdvance(status_str)) // 2
+                painter.drawText(tx, by + 19, status_str)
+                y += hi_row_h
+
+            painter.setPen(QPen(C_ACCENT, 1.5))
+            painter.drawLine(margin, y, margin + tbl_w, y)
+
+            # ── PAGES 2-7: Analysis table + graph per parameter ───────────────
+            for (key, pg_num, icon, sec_title, g_title, _, unit, dec) in param_pages:
+                _new_page(pg_num)
+                y = 90
+                y = _page_heading("Performance Analysis Report", y)
+                y = _section_header(icon, sec_title, y)
+                y = _draw_table(_build_rows(key, unit, dec), y)
+                y += 18
                 painter.setPen(QColor("#0F172A"))
-                painter.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
-                painter.drawText(margin, 840, g2_title)
-                
-                pix2 = QPixmap(temp_png_paths[g2_key])
-                scaled_pix2 = pix2.scaled(graph_width, graph_height, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                painter.drawPixmap(graph_x, 860, scaled_pix2)
-                
-                draw_page_decorations(painter, page_num, 4)
-                
-            # PAGE 2: RPM and Voltage
-            draw_graphs_page(painter, 2, "Speed (RPM) vs Time", "RPM", "Voltage vs Time", "Voltage")
-            
-            # PAGE 3: Current and Power
-            draw_graphs_page(painter, 3, "Current vs Time", "Current", "Power vs Time", "Power")
-            
-            # PAGE 4: Temperature and Efficiency
-            draw_graphs_page(painter, 4, "Temperature vs Time", "Temperature", "Efficiency vs Time", "Efficiency")
-            
+                painter.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+                painter.drawText(margin, y, g_title)
+                y += 22
+                available_h = page_height - y - 90
+                g_h = min(graph_height, available_h)
+                if g_h > 100 and key in temp_png_paths:
+                    pix = QPixmap(temp_png_paths[key])
+                    scaled = pix.scaled(graph_width, g_h,
+                                        Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                    painter.drawPixmap(margin, y, scaled)
+
             painter.end()
             self._show_toast("✅ PDF exported successfully")
         except Exception as e:

@@ -8,8 +8,9 @@ grid lines, legend, and customized font rendering.
 from __future__ import annotations
 
 from collections import deque
+import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QElapsedTimer
 from PySide6.QtGui import QColor, QLinearGradient, QBrush, QFont
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QSizePolicy, QGraphicsDropShadowEffect
 
@@ -41,11 +42,21 @@ class RealtimeGraph(QWidget):
         self._elapsed: float = 0.0
         self._waiting_for_data: bool = True
 
+        # Cache numpy arrays so we don't re-allocate on every update
+        self._np_times: np.ndarray = np.array([], dtype=np.float64)
+        self._np_values: np.ndarray = np.array([], dtype=np.float64)
+        self._data_dirty: bool = False   # True when deque changed but numpy not yet synced
+
+        # Throttle the HUD/crosshair update to ~30 ms
+        self._hud_timer = QElapsedTimer()
+        self._hud_timer.start()
+        self._HUD_THROTTLE_MS: int = 30
+
         self.DEFAULT_RANGES = {
             "RPM": (0.0, 3000.0),
             "Voltage": (0.0, 25.0),
-            "Current": (0.0, 5.0),
-            "Power": (0.0, 50.0),
+            "Current": (0.0, 2.5),
+            "Power": (0.0, 10.0),
             "Temperature": (0.0, 100.0),
             "Efficiency": (0.0, 100.0),
         }
@@ -54,13 +65,25 @@ class RealtimeGraph(QWidget):
         self._current_ymax = 3000.0
 
         self._range_timer = QTimer(self)
-        self._range_timer.setInterval(20)
+        self._range_timer.setInterval(50)   # 20 Hz is sufficient for smooth animation
         self._range_timer.timeout.connect(self._step_range_animation)
-        self._range_timer.start()
+        # Timer starts only when widget becomes visible (see showEvent/hideEvent)
 
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self._build_ui()
         self._setup_crosshair()
+
+    # ------------------------------------------------------------------ #
+    #  Visibility management – pause timers when off-screen
+    # ------------------------------------------------------------------ #
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        if not self._range_timer.isActive():
+            self._range_timer.start()
+
+    def hideEvent(self, event) -> None:  # noqa: N802
+        super().hideEvent(event)
+        self._range_timer.stop()
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -196,7 +219,7 @@ class RealtimeGraph(QWidget):
         self._plot_widget.scene().sigMouseMoved.connect(self._on_mouse_moved)
 
     def _on_mouse_moved(self, pos) -> None:
-        """Handle mouse movement to update crosshair tracking and HUD text."""
+        """Handle mouse movement to update crosshair tracking and HUD text (throttled)."""
         plot_item = self._plot_widget.plotItem
         view_box = plot_item.vb
 
@@ -205,25 +228,24 @@ class RealtimeGraph(QWidget):
             x = mouse_point.x()
             y = mouse_point.y()
 
-            # Align lines to cursor
+            # Always update crosshair position (cheap)
             self._v_line.setPos(x)
             self._h_line.setPos(y)
-
-            # Update HUD HTML display
-            hud_html = (
-                f"<div style='padding: 6px; color: #E2E8F0; font-family: Segoe UI, sans-serif; font-size: 8pt;'>"
-                f"<b style='color: #60A5FA;'>Time:</b> {x:.2f} s<br/>"
-                f"<b style='color: {self._line_color};'>{self._y_label}:</b> {y:.2f} {self._y_unit}"
-                f"</div>"
-            )
-            self._hud.setHtml(hud_html)
-
-            # Calculate suitable offsets so HUD text is placed slightly to the right/above cursor
-            self._hud.setPos(x, y)
-
             self._v_line.show()
             self._h_line.show()
-            self._hud.show()
+
+            # Throttle the expensive HTML HUD update
+            if self._hud_timer.elapsed() >= self._HUD_THROTTLE_MS:
+                self._hud_timer.restart()
+                hud_html = (
+                    f"<div style='padding: 6px; color: #E2E8F0; font-family: Segoe UI, sans-serif; font-size: 8pt;'>"
+                    f"<b style='color: #60A5FA;'>Time:</b> {x:.2f} s<br/>"
+                    f"<b style='color: {self._line_color};'>{self._y_label}:</b> {y:.2f} {self._y_unit}"
+                    f"</div>"
+                )
+                self._hud.setHtml(hud_html)
+                self._hud.setPos(x, y)
+                self._hud.show()
         else:
             self._v_line.hide()
             self._h_line.hide()
@@ -360,6 +382,13 @@ class RealtimeGraph(QWidget):
         self._plot_widget.setYRange(self._current_ymin, self._current_ymax, padding=0)
         self._plot_widget.enableAutoRange(axis='x', enable=True)
 
+    def _sync_numpy(self) -> None:
+        """Sync internal numpy arrays from deques (only when dirty)."""
+        if self._data_dirty:
+            self._np_times = np.fromiter(self._times, dtype=np.float64, count=len(self._times))
+            self._np_values = np.fromiter(self._values, dtype=np.float64, count=len(self._values))
+            self._data_dirty = False
+
     def append_value(self, value: float) -> None:
         """Append a new data sample to the graph."""
         is_first = not self._times
@@ -368,15 +397,19 @@ class RealtimeGraph(QWidget):
         self._elapsed += 0.1
         self._times.append(self._elapsed)
         self._values.append(value)
+        self._data_dirty = True
 
         if self._times:
-            self._curve.setData(list(self._times), list(self._values))
+            self._sync_numpy()
+            self._curve.setData(self._np_times, self._np_values)
             if self._values:
-                self._point_marker.setData([self._times[-1]], [self._values[-1]])
+                last_t = self._np_times[-1]
+                last_v = self._np_values[-1]
+                self._point_marker.setData([last_t], [last_v])
                 self._latest_value_lbl.setHtml(
-                    f"<div style='padding: 1px 3px; color: #FFFFFF; font-family: Segoe UI, sans-serif; font-size: 8pt; font-weight: bold;'>{self._values[-1]:.1f}</div>"
+                    f"<div style='padding: 1px 3px; color: #FFFFFF; font-family: Segoe UI, sans-serif; font-size: 8pt; font-weight: bold;'>{last_v:.1f}</div>"
                 )
-                self._latest_value_lbl.setPos(self._times[-1], self._values[-1])
+                self._latest_value_lbl.setPos(last_t, last_v)
                 self._latest_value_lbl.setVisible(True)
 
             if is_first:
@@ -386,6 +419,9 @@ class RealtimeGraph(QWidget):
         """Clear all stored data and reset the graph."""
         self._times.clear()
         self._values.clear()
+        self._np_times = np.array([], dtype=np.float64)
+        self._np_values = np.array([], dtype=np.float64)
+        self._data_dirty = False
         self._elapsed = 0.0
         self._curve.setData([], [])
         self._point_marker.clear()
@@ -399,21 +435,27 @@ class RealtimeGraph(QWidget):
         """Set the entire data curve."""
         self._times = deque(times, maxlen=self.MAX_POINTS)
         self._values = deque(values, maxlen=self.MAX_POINTS)
+        self._data_dirty = True
         if times:
             self._waiting_for_data = False
             self._set_waiting_state(False)
             self._elapsed = times[-1]
-            self._curve.setData(list(self._times), list(self._values))
+            self._sync_numpy()
+            self._curve.setData(self._np_times, self._np_values)
             if self._values:
-                self._point_marker.setData([self._times[-1]], [self._values[-1]])
+                last_t = self._np_times[-1]
+                last_v = self._np_values[-1]
+                self._point_marker.setData([last_t], [last_v])
                 self._latest_value_lbl.setHtml(
-                    f"<div style='padding: 1px 3px; color: #FFFFFF; font-family: Segoe UI, sans-serif; font-size: 8pt; font-weight: bold;'>{self._values[-1]:.1f}</div>"
+                    f"<div style='padding: 1px 3px; color: #FFFFFF; font-family: Segoe UI, sans-serif; font-size: 8pt; font-weight: bold;'>{last_v:.1f}</div>"
                 )
-                self._latest_value_lbl.setPos(self._times[-1], self._values[-1])
+                self._latest_value_lbl.setPos(last_t, last_v)
                 self._latest_value_lbl.setVisible(True)
             self._snap_to_target_range()
         else:
             self._elapsed = 0.0
+            self._np_times = np.array([], dtype=np.float64)
+            self._np_values = np.array([], dtype=np.float64)
             self._curve.setData([], [])
             self._point_marker.clear()
             self._latest_value_lbl.setVisible(False)

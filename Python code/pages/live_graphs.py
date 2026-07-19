@@ -84,6 +84,22 @@ class LiveGraphsPage(QWidget):
         root_layout.addWidget(scroll)
 
     # ------------------------------------------------------------------ #
+    #  Visibility management – stop graph timers when page is hidden
+    # ------------------------------------------------------------------ #
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        for graph in (self._graph_rpm, self._graph_volt, self._graph_curr,
+                      self._graph_pwr, self._graph_eff, self._graph_temp):
+            if not graph._range_timer.isActive():
+                graph._range_timer.start()
+
+    def hideEvent(self, event) -> None:  # noqa: N802
+        super().hideEvent(event)
+        for graph in (self._graph_rpm, self._graph_volt, self._graph_curr,
+                      self._graph_pwr, self._graph_eff, self._graph_temp):
+            graph._range_timer.stop()
+
+    # ------------------------------------------------------------------ #
     #  Public Update API
     # ------------------------------------------------------------------ #
     def update_data(self) -> None:
