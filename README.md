@@ -14,7 +14,7 @@
 
 # 📖 About the Project
 
-Smart Motor Test Bench is a desktop application developed to monitor and analyze the real-time performance of a DC motor.
+>Smart Motor Test Bench is a desktop application developed to monitor and analyze the real-time performance of a DC motor.
 
 The software communicates with Arduino using Serial Communication and provides live visualization of motor parameters including RPM, Voltage, Current, Power, Temperature and Efficiency through a modern industrial dashboard.
 
@@ -28,6 +28,7 @@ It also provides professional reporting and export capabilities.
 
 # 🚀 Startup Screen
 
+>A professional splash screen that initializes the application, verifies system resources, and prepares communication with Arduino.
 
 ![Startup](Images/startup.png)
 
@@ -43,6 +44,7 @@ It also provides professional reporting and export capabilities.
 
 ## 🖥 Main Dashboard
 
+>Monitor every critical motor parameter from a single intuitive interface.
 
 ![Dashboard](Images/dashboard.png)
 
@@ -66,7 +68,7 @@ Each parameter displays:
 
 ## 📈 Live Graphs
 
-
+>Interactive real-time charts that transform raw sensor readings into meaningful performance trends.
 
 ![Graphs](Images/graphs.png)
 
@@ -83,7 +85,7 @@ Each parameter displays:
 
 ## 📊 Statistics Panel
 
-
+>Instantly analyze maximum, minimum, average, and current values while monitoring overall system uptime.
 
 ![Statistics](Images/dashboard1.png)
 
@@ -99,6 +101,8 @@ Displays:
 
 ## 📤 Export System
 
+>Generate professional reports and export performance data in multiple formats with a single click.
+
 ![Export](Images/export.png)
 
 Supports:
@@ -112,7 +116,7 @@ Supports:
 
 ## ⚙ Top Control Bar
 
-
+>Centralized controls for device status, communication, firmware information, and reporting tools.
 
 ![TopBar](Images/topbar.png)
 
@@ -209,7 +213,7 @@ MIT License
 
 Electrical Engineering Student
 
-University of Engineering and Technology (UET) Lahore
+University of Engineering and Technology (UET) Lahore,Pakistan
 
 ---
 
