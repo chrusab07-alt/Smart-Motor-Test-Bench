@@ -43,7 +43,7 @@ class SettingsPage(QWidget):
             "theme": "Industrial Dark",
             "dark_mode": True,
             "refresh_rate_ms": 100,
-            "baud_rate": 115200,
+            "baud_rate": 9600,
             "default_com_port": "COM3",
             "auto_connect": True
         }

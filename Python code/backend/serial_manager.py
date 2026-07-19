@@ -21,7 +21,7 @@ class SerialManager:
 
     def __init__(self) -> None:
         self._port: str = "COM3"
-        self._baud: int = 115200
+        self._baud: int = 9600
         self._connected: bool = False
         self._serial: serial.Serial | None = None
         self._last_error: str = ""
@@ -42,7 +42,7 @@ class SerialManager:
     # ------------------------------------------------------------------ #
     #  Public API
     # ------------------------------------------------------------------ #
-    def connect(self, port: str, baud_rate: int = 115200) -> bool:
+    def connect(self, port: str, baud_rate: int = 9600) -> bool:
         """Open the serial port."""
         try:
             if self._serial and self._serial.is_open:
@@ -63,6 +63,12 @@ class SerialManager:
                 self._serial.rts = True
             except Exception as e:
                 print(f"[SerialManager] Warning: could not set DTR/RTS: {e}")
+
+            # Flush any initial connection/reset bootloader garbage from RX buffer
+            try:
+                self._serial.reset_input_buffer()
+            except Exception:
+                pass
 
             self._connected = True
             self._last_error = ""
@@ -107,7 +113,9 @@ class SerialManager:
             if self._serial.in_waiting <= 0:
                 return None
 
-            line = self._serial.readline().decode("utf-8", errors="ignore").strip()
+            raw_bytes = self._serial.readline()
+            # Strip null bytes (\x00) and surrounding whitespace
+            line = raw_bytes.decode("utf-8", errors="ignore").replace("\x00", "").strip()
             if line and self.parse_packet(line):
                 return line
         except Exception as e:
@@ -125,38 +133,86 @@ class SerialManager:
         """Parse a telemetry packet and store it as the latest live payload.
 
         Supported packet formats:
-        - RPM,Voltage,Current,Power,Efficiency,Temperature
+        - Positional: RPM,Voltage,Current,Power,Temperature,Efficiency [,PWM,DIR]
+        - Labeled: RPM:1500,V:12.0,I:2.5,P:30.0,Temp:38.5,Eff:85.0,PWM:75,DIR:FWD
         """
+        if not line:
+            return False
+
         try:
             raw_parts = [part.strip() for part in line.split(",")]
             if len(raw_parts) < 6:
                 print(f"[SerialManager] Data format warning: line has less than 6 parts ({len(raw_parts)} parts): {repr(line)}")
                 return False
 
-            def _extract_value(raw_value: str) -> float:
-                value = raw_value.strip()
-                if ":" in value:
-                    value = value.split(":", 1)[1].strip()
-                elif "=" in value:
-                    value = value.split("=", 1)[1].strip()
-                return float(value)
+            key_map: dict[str, str] = {}
+            for part in raw_parts:
+                if ":" in part or "=" in part:
+                    delim = ":" if ":" in part else "="
+                    k, v = part.split(delim, 1)
+                    key_map[k.strip().upper()] = v.strip()
 
-            rpm = _extract_value(raw_parts[0])
-            voltage = _extract_value(raw_parts[1])
-            current = _extract_value(raw_parts[2])
-            power = _extract_value(raw_parts[3])
-            efficiency = _extract_value(raw_parts[4])
-            temperature = _extract_value(raw_parts[5])
-
+            rpm: float | None = None
+            voltage: float | None = None
+            current: float | None = None
+            power: float | None = None
+            efficiency: float | None = None
+            temperature: float | None = None
             pwm_duty = self._latest_metrics.get("pwm_duty", 0)
             direction = self._latest_metrics.get("direction", "FWD")
 
-            if len(raw_parts) >= 7:
+            if key_map:
+                for k, v in key_map.items():
+                    try:
+                        num_val = float(v)
+                    except ValueError:
+                        num_val = None
+
+                    if k in ("RPM", "SPEED"):
+                        rpm = num_val
+                    elif k in ("VOLTAGE", "VOLT", "V"):
+                        voltage = num_val
+                    elif k in ("CURRENT", "CURR", "I", "AMP"):
+                        current = num_val
+                    elif k in ("POWER", "PWR", "P", "WATT"):
+                        power = num_val
+                    elif k in ("EFFICIENCY", "EFF", "EFF%"):
+                        efficiency = num_val
+                    elif k in ("TEMPERATURE", "TEMP", "TMP", "T", "DEG"):
+                        temperature = num_val
+                    elif k in ("PWM", "DUTY"):
+                        if num_val is not None:
+                            pwm_duty = int(num_val)
+                    elif k in ("DIR", "DIRECTION"):
+                        direction = v.upper()
+
+            def _extract_val(idx: int) -> float:
+                val_str = raw_parts[idx]
+                if ":" in val_str:
+                    val_str = val_str.split(":", 1)[1]
+                elif "=" in val_str:
+                    val_str = val_str.split("=", 1)[1]
+                return float(val_str.strip())
+
+            if rpm is None:
+                rpm = _extract_val(0)
+            if voltage is None:
+                voltage = _extract_val(1)
+            if current is None:
+                current = _extract_val(2)
+            if power is None:
+                power = _extract_val(3)
+            if temperature is None:
+                temperature = _extract_val(4)
+            if efficiency is None:
+                efficiency = _extract_val(5)
+
+            if len(raw_parts) >= 7 and "PWM" not in key_map and "DUTY" not in key_map:
                 try:
-                    pwm_duty = int(float(_extract_value(raw_parts[6])))
-                except ValueError:
+                    pwm_duty = int(_extract_val(6))
+                except (ValueError, IndexError):
                     pass
-            if len(raw_parts) >= 8:
+            if len(raw_parts) >= 8 and "DIR" not in key_map and "DIRECTION" not in key_map:
                 direction = raw_parts[7].replace('DIR:', '').strip()
 
             self._latest_metrics = {

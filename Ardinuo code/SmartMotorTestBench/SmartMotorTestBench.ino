@@ -1,41 +1,38 @@
 /*
-  Smart Motor Test Bench
-  Demo Mode
-  Output:
-  RPM,Voltage,Current,Power,Temperature,Efficiency
+===========================================
+Smart Motor Test Bench
+Demo Mode (Random Values)
+Output:
+RPM,Voltage,Current,Power,Temperature,Efficiency
+===========================================
 */
-
-#include <Arduino.h>
-
-float angle = 0;
 
 void setup() {
   Serial.begin(9600);
-  delay(2000);   // Allow serial connection to stabilize
+  randomSeed(analogRead(A0));   // Better random values
+  delay(2000);
 }
 
 void loop() {
 
-  angle += 0.05;
+  // RPM: 1550 - 1800
+  int rpm = random(1550, 1801);
 
-  // Demo values
-  int rpm = 1700 + 120 * sin(angle);
+  // Voltage: 11.80 - 12.40
+  float voltage = random(1180, 1241) / 100.0;
 
-  float voltage = 12.10 + 0.25 * sin(angle * 0.7);
+  // Current: 0.55 - 0.95
+  float current = random(70, 150) / 100.0;
 
-  float current = 0.80 + 0.15 * sin(angle * 1.2);
-
+  // Power
   float power = voltage * current;
 
-  float temperature = 35.0 + 4.0 * sin(angle * 0.4);
+  // Temperature: 28.0 - 35.0 °C
+  float temperature = random(400, 650) / 10.0;
 
-  float efficiency = 82.0 + 6.0 * sin(angle * 0.5);
+  // Efficiency: 78 - 90 %
+  float efficiency = random(780, 901) / 10.0;
 
-  // Keep efficiency within limits
-  if (efficiency > 100) efficiency = 100;
-  if (efficiency < 0) efficiency = 0;
-
-  // Send data
   Serial.print(rpm);
   Serial.print(",");
 
