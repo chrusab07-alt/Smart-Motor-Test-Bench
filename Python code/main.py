@@ -1052,8 +1052,10 @@ class MainWindow(QMainWindow):
             self._export_settings_info()
 
     def _export_report_pdf(self) -> None:
+        now_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        default_filename = f"Smart_Motor_Report_{now_str}.pdf"
         file_path, _ = QFileDialog.getSaveFileName(
-            self, "Export Report to PDF", "", "PDF Files (*.pdf)"
+            self, "Export Report to PDF", default_filename, "PDF Files (*.pdf)"
         )
         if not file_path:
             return
@@ -1063,7 +1065,7 @@ class MainWindow(QMainWindow):
         try:
             import os
             import tempfile
-            import datetime
+            import datetime as dt_mod
             from PySide6.QtGui import QPdfWriter, QPainter, QPageLayout, QPageSize, QPen, QBrush, QPixmap, QColor, QFont
             from PySide6.QtCore import Qt
             from PySide6.QtWidgets import QApplication, QMessageBox
@@ -1107,11 +1109,9 @@ class MainWindow(QMainWindow):
                 vals = history_values.get(key, [])
                 export_graph.set_data(times, vals)
 
-                # Ensure fully rendered and force canvas repaint
-                export_graph.show()
+                # Polish and size off-screen without showing it on screen
                 export_graph.ensurePolished()
-                export_graph.repaint()
-                export_graph._plot_widget.repaint()
+                export_graph.adjustSize()
                 QApplication.processEvents()
 
                 # Capture actual plotting canvas (_plot_widget), not parent container
@@ -1162,7 +1162,7 @@ class MainWindow(QMainWindow):
                 painter.drawText(page_width - margin - 100, page_height - 40, page_str)
                 
             # ── Variables needed across pages ───────────────────────────────
-            now           = datetime.datetime.now()
+            now           = dt_mod.datetime.now()
             fw_version    = self._fw_card.fw_val.text()     if hasattr(self, "_fw_card")   else "v1.0.0"
             com_port      = self._com_card.value_lbl.text() if hasattr(self, "_com_card")  else "N/A"
             system_status = self._conn_card.text_lbl.text() if hasattr(self, "_conn_card") else "Unknown"
@@ -1488,8 +1488,10 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "No Telemetry Data", "There is no recorded telemetry data in the active session buffer to export.")
             return
             
+        now_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        default_filename = f"Smart_Motor_Data_{now_str}.csv"
         file_path, _ = QFileDialog.getSaveFileName(
-            self, "Export Telemetry Data to CSV", "", "CSV Files (*.csv)"
+            self, "Export Telemetry Data to CSV", default_filename, "CSV Files (*.csv)"
         )
         if not file_path:
             return
@@ -1515,8 +1517,10 @@ class MainWindow(QMainWindow):
         if not hasattr(self, "_dashboard") or not self._dashboard:
             return
             
+        now_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        default_filename = f"Smart_Motor_Dashboard_{now_str}.png"
         file_path, _ = QFileDialog.getSaveFileName(
-            self, "Export Dashboard Screenshot", "", "PNG Files (*.png)"
+            self, "Export Dashboard Screenshot", default_filename, "PNG Files (*.png)"
         )
         if not file_path:
             return
@@ -1529,8 +1533,10 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Export Failed", f"Failed to save screenshot: {e}")
 
     def _capture_screenshot(self) -> None:
+        now_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        default_filename = f"Smart_Motor_Screenshot_{now_str}.png"
         file_path, _ = QFileDialog.getSaveFileName(
-            self, "Capture App Screenshot", "", "PNG Files (*.png)"
+            self, "Capture App Screenshot", default_filename, "PNG Files (*.png)"
         )
         if not file_path:
             return
